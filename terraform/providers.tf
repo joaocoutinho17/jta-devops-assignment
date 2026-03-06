@@ -10,10 +10,6 @@ terraform {
 
   #Poderia omitir e passar os valores no terraform init com "-backend-config=..."
   backend "azurerm" {
-    resource_group_name  = "rg-terraform-state"
-    storage_account_name = "jtadevstorage"
-    container_name       = "tfstate"
-    key                  = "jta.tfstate"
   }
 }
 
