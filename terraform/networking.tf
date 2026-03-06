@@ -1,4 +1,4 @@
-# Vnet
+# VNet ---------------------------------------------------------------------------------------------------------
 resource "azurerm_virtual_network" "this" {
   name                = "vnet-${local.prefix}"
   location            = azurerm_resource_group.networking.location
@@ -6,7 +6,7 @@ resource "azurerm_virtual_network" "this" {
   address_space       = [var.vnet_address_space]
 }
 
-# Subnets
+# Subnets ---------------------------------------------------------------------------------------------------------
 # Subnet VPN Gateway
 resource "azurerm_subnet" "gateway" {
   name                 = "GatewaySubnet"
@@ -50,7 +50,7 @@ resource "azurerm_subnet" "backend" {
 }
 
 
-# NSG
+# NSG ---------------------------------------------------------------------------------------------------------
 resource "azurerm_network_security_group" "backend" {
   name                = "nsg-backend-${local.prefix}"
   location            = azurerm_resource_group.networking.location
@@ -82,13 +82,13 @@ resource "azurerm_network_security_group" "backend" {
   }
 }
 
-# NSG association
+# NSG association 
 resource "azurerm_subnet_network_security_group_association" "backend" {
   subnet_id                 = azurerm_subnet.backend.id
   network_security_group_id = azurerm_network_security_group.backend.id
 }
 
-# VPN Gateway
+# VPN Gateway ---------------------------------------------------------------------------------------------------------
 # https://registry.terraform.io/providers/hashicorp/Azurerm/latest/docs/resources/virtual_network_gateway
 resource "azurerm_public_ip" "vpn_gateway" {
   name                = "pip-vpngw-${local.prefix}"
@@ -115,26 +115,101 @@ resource "azurerm_virtual_network_gateway" "vpn" {
   }
 }
 
-# Private DNS Zone
+# Private Endpoint and VNet Integration -----------------------------------
+# Private Endpoint frontend (azure static web app)
+resource "azurerm_private_endpoint" "frontend" {
+  name                = "pe-stapp-${local.prefix}"
+  resource_group_name = azurerm_resource_group.apps.name
+  location            = azurerm_resource_group.apps.location
+  subnet_id           = azurerm_subnet.frontend.id
+
+  private_service_connection {
+    name                           = "psc-stapp-${local.prefix}"
+    private_connection_resource_id = azurerm_static_web_app.frontend.id
+    subresource_names              = ["staticSites"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "dns-group-stapp-${local.prefix}"
+    private_dns_zone_ids = [azurerm_private_dns_zone.static_web_app.id]
+  }
+
+  tags = local.tags
+}
+
+# Private ENdpoint Sql
+resource "azurerm_private_endpoint" "sql" {
+  name                = "pe-sql-${local.prefix}"
+  location            = azurerm_resource_group.apps.location
+  resource_group_name = azurerm_resource_group.apps.name
+  subnet_id           = azurerm_subnet.backend.id
+  tags                = local.tags
+
+  private_service_connection {
+    name                           = "psc-sql-${local.prefix}"
+    private_connection_resource_id = azurerm_mssql_server.sql.id
+    subresource_names              = ["sqlServer"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "dns-group-sql-${local.prefix}"
+    private_dns_zone_ids = [azurerm_private_dns_zone.sql.id]
+  }
+}
+
+# Private Endpoint
+resource "azurerm_private_endpoint" "blob" {
+  name                = "pe-blob-${local.prefix}"
+  location            = azurerm_resource_group.apps.location
+  resource_group_name = azurerm_resource_group.apps.name
+  subnet_id           = azurerm_subnet.backend.id
+  tags                = local.tags
+
+  private_service_connection {
+    name                           = "psc-blob-${local.prefix}"
+    private_connection_resource_id = azurerm_storage_account.storage.id
+    subresource_names              = ["blob"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "dns-group-blob-${local.prefix}"
+    private_dns_zone_ids = [azurerm_private_dns_zone.blob.id]
+  }
+}
+
+# Vnet integration
+resource "azurerm_app_service_virtual_network_swift_connection" "this" {
+  app_service_id = azurerm_linux_web_app.appservice.id
+  subnet_id      = azurerm_subnet.appservice.id
+}
+
+# Private DNS Zone ----------------------------------------------------------------------
+# Private DNS Zone Static Web App
 resource "azurerm_private_dns_zone" "static_web_app" {
   name                = "privatelink.azurestaticapps.net"
   resource_group_name = azurerm_resource_group.networking.name
   tags                = local.tags
 }
 
+# Private DNS Zone SQL
 resource "azurerm_private_dns_zone" "sql" {
   name                = "privatelink.database.windows.net"
   resource_group_name = azurerm_resource_group.networking.name
   tags                = local.tags
 }
 
+# Private DNS Zone Blob Storage
 resource "azurerm_private_dns_zone" "blob" {
   name                = "privatelink.blob.core.windows.net"
   resource_group_name = azurerm_resource_group.networking.name
   tags                = local.tags
 }
 
-# Vnet link to private dns zone
+# Vnet link to private dns zone ----------------------------------------------------------------------
+# Vnet link to private dns zone Static Web App
 resource "azurerm_private_dns_zone_virtual_network_link" "static_web_app" {
   name                  = "dns-link-stapp-${local.prefix}"
   resource_group_name   = azurerm_resource_group.networking.name
@@ -143,6 +218,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "static_web_app" {
   tags                  = local.tags
 }
 
+# Vnet link to private dns zone SQl
 resource "azurerm_private_dns_zone_virtual_network_link" "sql" {
   name                  = "dns-link-sql-${local.prefix}"
   resource_group_name   = azurerm_resource_group.networking.name
@@ -152,6 +228,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "sql" {
   tags                  = local.tags
 }
 
+# Vnet link to private dns zone Blob Storage
 resource "azurerm_private_dns_zone_virtual_network_link" "blob" {
   name                  = "dns-link-blob-${local.prefix}"
   resource_group_name   = azurerm_resource_group.networking.name
