@@ -1,6 +1,6 @@
 # Architecture Proposal - jta-web.com
 
-![Architecture Diagram](jta-diagram.png)
+![Architecture Diagram](jta-solution-diagram.png)
 
 The solution follows a **private-by-default** approach using Azure PaaS services. All resources are deployed in **West Europe** and are only accessible via corporate network or VPN.
 
